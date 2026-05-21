@@ -40,30 +40,38 @@ export default async function handler(req, res) {
 }
 
 function extractImages(html) {
-  const results = new Map();
+  const results = [];
+
+  // Normaliza escapes do Flickr
   const clean = html.replace(/\\"/g, '"').replace(/\\n/g, ' ');
 
-  // Padrão real encontrado no debug:
-  // "id":"55280458051","exportMetaType":"model","secret":"18bf2aa4f0"
-  const re = /"id"\s*:\s*"(\d{8,})"[^}]{0,60}"exportMetaType"\s*:\s*"model"[^}]{0,60}"secret"\s*:\s*"([0-9a-f]+)"/g;
-  let m;
-  while ((m = re.exec(clean)) !== null) {
-    const [, id, secret] = m;
-    // Busca server nas proximidades (300 chars à frente)
-    const ahead = clean.slice(m.index, m.index + 300);
-    const serverM = ahead.match(/"server"\s*:\s*"(\d+)"/);
-    const server = serverM ? serverM[1] : '65535'; // fallback ao server conhecido
-    if (!results.has(id))
-      results.set(id, `https://live.staticflickr.com/${server}/${id}_${secret}_b.jpg`);
+  // Extrai todos os ids de foto (11 dígitos) e secrets em ordem de aparição
+  const ids     = [...clean.matchAll(/"id"\s*:\s*"(\d{10,12})"/g)].map(m => ({ val: m[1], idx: m.index }));
+  const secrets = [...clean.matchAll(/"secret"\s*:\s*"([0-9a-f]{8,12})"/g)].map(m => ({ val: m[1], idx: m.index }));
+  const servers = [...clean.matchAll(/"server"\s*:\s*"(\d{4,5})"/g)].map(m => ({ val: m[1], idx: m.index }));
+
+  // Para cada id, acha o secret mais próximo depois dele
+  const used = new Set();
+  for (const id of ids) {
+    // Pega o primeiro secret que aparece após esse id (dentro de 500 chars)
+    const secret = secrets.find(s => s.idx > id.idx && s.idx < id.idx + 500 && !used.has(s.val));
+    if (!secret) continue;
+    used.add(secret.val);
+
+    // Pega o server mais próximo ao redor
+    const server = servers.find(s => Math.abs(s.idx - id.idx) < 600) || { val: '65535' };
+
+    results.push(`https://live.staticflickr.com/${server.val}/${id.val}_${secret.val}_b.jpg`);
+    if (results.length >= 20) break;
   }
 
-  // Fallback: URLs diretas no HTML
-  if (results.size === 0) {
+  // Fallback: URLs diretas
+  if (results.length === 0) {
     const raw = [...html.matchAll(/https:\/\/live\.staticflickr\.com\/[^"'\s\\>]+/g)].map(m => m[0]);
     const filtered = [...new Set(raw)].filter(u => !/_[sqtn]\.\w+$/.test(u));
     const preferred = filtered.filter(u => /_b\.\w+$/.test(u));
-    (preferred.length ? preferred : filtered).forEach((u, i) => results.set('f'+i, u));
+    return preferred.length ? preferred : filtered;
   }
 
-  return [...results.values()];
+  return [...new Set(results)];
 }
