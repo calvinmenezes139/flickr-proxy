@@ -41,41 +41,23 @@ export default async function handler(req, res) {
 
 function extractImages(html) {
   const results = new Map();
+  const clean = html.replace(/\\"/g, '"').replace(/\\n/g, ' ');
 
-  // O Flickr escapa as aspas com \", então normalizamos primeiro
-  const clean = html.replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\\\/g, '\\');
-
-  // Padrão 1: "id":"FOTOID" ... "secret":"SECRET" ... "server":"SERVER" num raio de 300 chars
-  const idRe = /"id"\s*:\s*"(\d{8,})"/g;
+  // Padrão real encontrado no debug:
+  // "id":"55280458051","exportMetaType":"model","secret":"18bf2aa4f0"
+  const re = /"id"\s*:\s*"(\d{8,})"[^}]{0,60}"exportMetaType"\s*:\s*"model"[^}]{0,60}"secret"\s*:\s*"([0-9a-f]+)"/g;
   let m;
-  while ((m = idRe.exec(clean)) !== null) {
-    const id = m[1];
-    const slice = clean.slice(m.index, m.index + 400);
-    const secretM = slice.match(/"secret"\s*:\s*"([0-9a-f]+)"/);
-    const serverM = slice.match(/"server"\s*:\s*"(\d+)"/);
-    if (secretM && serverM && !results.has(id)) {
-      results.set(id, `https://live.staticflickr.com/${serverM[1]}/${id}_${secretM[1]}_b.jpg`);
-    }
+  while ((m = re.exec(clean)) !== null) {
+    const [, id, secret] = m;
+    // Busca server nas proximidades (300 chars à frente)
+    const ahead = clean.slice(m.index, m.index + 300);
+    const serverM = ahead.match(/"server"\s*:\s*"(\d+)"/);
+    const server = serverM ? serverM[1] : '65535'; // fallback ao server conhecido
+    if (!results.has(id))
+      results.set(id, `https://live.staticflickr.com/${server}/${id}_${secret}_b.jpg`);
   }
 
-  // Padrão 2: busca reversa — secret primeiro, depois id
-  if (results.size === 0) {
-    const secRe = /"secret"\s*:\s*"([0-9a-f]+)"/g;
-    while ((m = secRe.exec(clean)) !== null) {
-      const secret = m[1];
-      const before = clean.slice(Math.max(0, m.index - 300), m.index);
-      const after  = clean.slice(m.index, m.index + 200);
-      const idM     = (before.match(/"id"\s*:\s*"(\d{8,})"/g) || []).pop();
-      const serverM = after.match(/"server"\s*:\s*"(\d+)"/) || before.match(/"server"\s*:\s*"(\d+)"/);
-      if (idM && serverM) {
-        const id = idM.match(/"id"\s*:\s*"(\d{8,})"/)[1];
-        if (!results.has(id))
-          results.set(id, `https://live.staticflickr.com/${serverM[1]}/${id}_${secret}_b.jpg`);
-      }
-    }
-  }
-
-  // Padrão 3: URLs diretas no HTML (fallback)
+  // Fallback: URLs diretas no HTML
   if (results.size === 0) {
     const raw = [...html.matchAll(/https:\/\/live\.staticflickr\.com\/[^"'\s\\>]+/g)].map(m => m[0]);
     const filtered = [...new Set(raw)].filter(u => !/_[sqtn]\.\w+$/.test(u));
