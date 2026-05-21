@@ -22,10 +22,32 @@ export default async function handler(req, res) {
 
     const images = extractImages(html);
 
+    // Modo debug: retorna trechos do HTML ao redor de "staticflickr"
+    if (req.query.debug === '1') {
+      const snippets = [];
+      let idx = 0;
+      while (snippets.length < 5) {
+        const pos = html.indexOf('staticflickr', idx);
+        if (pos === -1) break;
+        snippets.push(html.slice(Math.max(0, pos - 120), pos + 120));
+        idx = pos + 1;
+      }
+      // Também retorna trecho ao redor de "secret"
+      const secretSnippets = [];
+      idx = 0;
+      while (secretSnippets.length < 3) {
+        const pos = html.indexOf('"secret"', idx);
+        if (pos === -1) break;
+        secretSnippets.push(html.slice(Math.max(0, pos - 60), pos + 120));
+        idx = pos + 1;
+      }
+      return res.status(200).json({ snippets, secretSnippets, htmlSize: html.length });
+    }
+
     return res.status(200).json({
       images: images.slice(0, 20),
       total: images.length,
-      htmlSize: html.length // útil para debug
+      htmlSize: html.length
     });
 
   } catch (e) {
