@@ -13,12 +13,39 @@ export default async function handler(req, res) {
       headers: {
         'Accept': 'text/plain',
         'X-Return-Format': 'text',
+        'X-Remove-Selector': 'nav, header, footer, aside, .menu, .navigation, .sidebar, .ads, .relacionadas',
+        'X-Target-Selector': 'article, main, .content, .post, .materia, .article-body, .entry-content',
       }
     });
 
     if (!response.ok) throw new Error('Jina retornou status ' + response.status);
 
     let text = await response.text();
+
+    // Remove linhas curtas repetitivas de menu/navegação no início (menos de 60 chars)
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+    // Detecta onde começa o conteúdo real: primeira linha longa (>80 chars) ou após título
+    let startIdx = 0;
+    let longLineCount = 0;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].length > 80) {
+        longLineCount++;
+        if (longLineCount >= 2) { startIdx = i - 1; break; }
+      }
+    }
+
+    const cleanLines = lines.slice(startIdx);
+
+    // Remove linhas que parecem navegação (muito curtas ou só maiúsculas)
+    const filtered = cleanLines.filter(l => {
+      if (l.length < 20 && l === l.toUpperCase()) return false; // ex: "NOTÍCIAS", "PALPITES"
+      if (/^(foto|image|crédito|photo):/i.test(l)) return false;
+      if (/^siga-nos/i.test(l)) return false;
+      return true;
+    });
+
+    text = filtered.join(' ').replace(/\s{2,}/g, ' ').trim();
 
     // Limita a ~400 palavras
     const words = text.split(/\s+/).filter(w => w.length > 0);
