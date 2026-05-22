@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Notícia em Vídeo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f0f1a; color: #e0e0e0; min-height: 100vh; padding: 24px; }
+  h1 { text-align: center; font-size: 1.6rem; color: #fff; margin-bottom: 6px; }
+  .subtitle { text-align: center; color: #888; font-size: 0.85rem; margin-bottom: 28px; }
+  .card { background: #1a1a2e; border-radius: 14px; padding: 20px; margin-bottom: 16px; border: 1px solid #2a2a45; max-width: 700px; margin-left: auto; margin-right: auto; }
+  .card-title { font-size: 0.75rem; color: #6c63ff; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 14px; font-weight: 600; }
+  label { display: block; font-size: 0.8rem; color: #aaa; margin-bottom: 5px; margin-top: 12px; }
+  label:first-of-type { margin-top: 0; }
+  input { width: 100%; background: #0f0f1a; border: 1px solid #333; border-radius: 8px; padding: 10px 14px; color: #fff; font-size: 0.9rem; outline: none; transition: border .2s; }
+  input:focus { border-color: #6c63ff; }
+  .hint { font-size: 0.75rem; color: #555; margin-top: 4px; }
+  .btn { width: 100%; padding: 13px; background: linear-gradient(135deg, #6c63ff, #a855f7); border: none; border-radius: 10px; color: #fff; font-size: 1rem; font-weight: 600; cursor: pointer; transition: opacity .2s; margin-top: 8px; }
+  .btn:hover { opacity: .88; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-outline { background: transparent; border: 1px solid #6c63ff; color: #a78bfa; }
+  .btn-outline:hover { background: #6c63ff22; }
+  .status { text-align: center; padding: 10px; font-size: 0.88rem; color: #aaa; min-height: 32px; }
+  .status.error { color: #f87171; }
+  .status.ok { color: #4ade80; }
+  .progress-bar { height: 4px; background: #2a2a45; border-radius: 4px; overflow: hidden; margin-top: 10px; display: none; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #6c63ff, #a855f7); width: 0%; transition: width .3s; }
+  #preview-wrap { display: none; max-width: 700px; margin: 0 auto 16px; }
+  canvas { width: 100%; border-radius: 10px; display: block; }
+  .text-box { background: #0f0f1a; border-radius: 8px; padding: 14px; font-size: 0.85rem; line-height: 1.6; color: #ccc; max-height: 140px; overflow-y: auto; margin-top: 10px; white-space: pre-wrap; }
+  .row { display: flex; gap: 10px; margin-top: 14px; }
+  .row .btn { margin-top: 0; }
+  .photo-strip { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0; margin-top: 10px; }
+  .photo-strip img { height: 60px; width: 90px; object-fit: cover; border-radius: 6px; border: 2px solid transparent; cursor: pointer; flex-shrink: 0; }
+  .photo-strip img.active { border-color: #6c63ff; }
+</style>
+</head>
+<body>
+
+<h1>🎬 Notícia em Vídeo</h1>
+<p class="subtitle">Converta uma notícia em vídeo narrado com fotos do Flickr</p>
+
+<div class="card">
+  <div class="card-title">📰 Conteúdo</div>
+  <label>URL da Notícia</label>
+  <input id="newsUrl" type="url" placeholder="https://g1.globo.com/noticia/..." />
+  <label>URL do Álbum ou Perfil Flickr</label>
+  <input id="flickrUrl" type="url" placeholder="https://www.flickr.com/photos/usuario/albums/..." />
+  <p class="hint">Aceita perfil, álbum ou URL com foto individual</p>
+</div>
+
+<div class="card">
+  <button class="btn" id="generateBtn" onclick="start()">⚡ Gerar Vídeo</button>
+  <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="status" id="status">Aguardando...</div>
+</div>
+
+<div id="preview-wrap" class="card">
+  <div class="card-title">🎥 Pré-visualização</div>
+  <canvas id="canvas" width="854" height="480"></canvas>
+  <div class="photo-strip" id="photoStrip"></div>
+  <div class="text-box" id="textBox"></div>
+  <div class="row">
+    <button class="btn btn-outline" onclick="playNarration()">▶ Narrar</button>
+    <button class="btn" onclick="recordVideo()">⏺ Gravar e Baixar</button>
+  </div>
+</div>
+
+<script>
+var photos = [], newsText = '', currentPhoto = 0;
+
+function $(id) { return document.getElementById(id); }
+function setStatus(msg, type) { var el=$('status'); el.textContent=msg; el.className='status '+(type||''); }
+function setProgress(p) { $('progressBar').style.display=p>0?'block':'none'; $('progressFill').style.width=p+'%'; }
+
+async function fetchNewsText(newsUrl) {
+  var res = await fetch('/api/news?url=' + encodeURIComponent(newsUrl));
+  var data = await res.json();
+  if (data.error) throw new Error('Notícia: ' + data.error);
+  if (!data.text) throw new Error('Não foi possível extrair o texto da notícia.');
+  return data.text;
+}
+
+async function fetchFlickrPhotos(flickrUrl) {
+  var res = await fetch('/api/flickr?url=' + encodeURIComponent(flickrUrl));
+  var data = await res.json();
+  if (data.error) throw new Error('Flickr: ' + data.error);
+  if (!data.images || data.images.length === 0) throw new Error('Nenhuma foto encontrada no álbum.');
+  return data.images;
+}
+
+function loadImage(url) {
+  return new Promise(function(res, rej) {
+    var img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() { res(img); };
+    img.onerror = function() { rej(new Error('Falha: ' + url)); };
+    img.src = url;
+  });
+}
+
+async function start() {
+  var newsUrl = $('newsUrl').value.trim();
+  var flickrUrl = $('flickrUrl').value.trim();
+  if (!newsUrl || !flickrUrl) { setStatus('Preencha todos os campos.', 'error'); return; }
+
+  $('generateBtn').disabled = true;
+  setProgress(10);
+
+  try {
+    setStatus('📰 Extraindo texto da notícia...'); setProgress(15);
+    newsText = await fetchNewsText(newsUrl);
+
+    setStatus('📸 Buscando fotos no Flickr...'); setProgress(45);
+    var photoUrls = await fetchFlickrPhotos(flickrUrl);
+
+    setStatus('🖼 Carregando imagens...'); setProgress(60);
+    photos = [];
+    var lim = Math.min(photoUrls.length, 12);
+    for (var i = 0; i < lim; i++) {
+      try { photos.push(await loadImage(photoUrls[i])); } catch(e) { console.warn(e); }
+      setProgress(60 + Math.round((i+1)/lim*35));
+    }
+    if (photos.length === 0) throw new Error('Não foi possível carregar nenhuma imagem.');
+
+    setProgress(100);
+    setStatus('✅ ' + photos.length + ' fotos carregadas! Clique em Narrar ou Gravar.', 'ok');
+    setupPreview();
+  } catch(e) {
+    setStatus('Erro: ' + e.message, 'error');
+    setProgress(0);
+  }
+  $('generateBtn').disabled = false;
+}
+
+function setupPreview() {
+  $('preview-wrap').style.display = 'block';
+  $('textBox').textContent = newsText;
+  var strip = $('photoStrip');
+  strip.innerHTML = '';
+  photos.forEach(function(img, i) {
+    var t = document.createElement('img');
+    t.src = img.src;
+    if (i === 0) t.classList.add('active');
+    t.onclick = function() {
+      currentPhoto = i; drawFrame(i);
+      strip.querySelectorAll('img').forEach(function(x,j){ x.classList.toggle('active', j===i); });
+    };
+    strip.appendChild(t);
+  });
+  drawFrame(0);
+}
+
+function drawFrame(idx) {
+  var canvas = $('canvas'), ctx = canvas.getContext('2d'), img = photos[idx];
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  var scale = Math.max(canvas.width/img.width, canvas.height/img.height);
+  var w = img.width*scale, h = img.height*scale;
+  ctx.drawImage(img, (canvas.width-w)/2, (canvas.height-h)/2, w, h);
+  var grad = ctx.createLinearGradient(0, canvas.height*.55, 0, canvas.height);
+  grad.addColorStop(0,'rgba(0,0,0,0)'); grad.addColorStop(1,'rgba(0,0,0,0.82)');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+
+function playNarration() {
+  if (!newsText) return;
+  window.speechSynthesis.cancel();
+  var utt = new SpeechSynthesisUtterance(newsText);
+  utt.lang = 'pt-BR'; utt.rate = 0.95;
+  var totalWords = newsText.split(' ').length;
+  var wpp = Math.ceil(totalWords / photos.length);
+  var wc = 0;
+  utt.onboundary = function(e) {
+    if (e.name === 'word') {
+      wc++;
+      var idx = Math.min(Math.floor(wc/wpp), photos.length-1);
+      if (idx !== currentPhoto) {
+        currentPhoto = idx; drawFrame(idx);
+        $('photoStrip').querySelectorAll('img').forEach(function(t,j){ t.classList.toggle('active', j===idx); });
+      }
+    }
+  };
+  utt.onend = function() { setStatus('✅ Narração concluída.', 'ok'); };
+  window.speechSynthesis.speak(utt);
+  setStatus('🔊 Narrando...', '');
+}
+
+async function recordVideo() {
+  if (!photos.length || !newsText) return;
+  setStatus('⏺ Gravando vídeo...', '');
+  var canvas = $('canvas');
+  var stream = canvas.captureStream(24);
+  var recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+  var chunks = [];
+  recorder.ondataavailable = function(e) { chunks.push(e.data); };
+  recorder.onstop = function() {
+    var blob = new Blob(chunks, { type: 'video/webm' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'noticia-video.webm';
+    a.click();
+    setStatus('✅ Download iniciado!', 'ok');
+  };
+  var wps = 2.5, total = newsText.split(' ').length;
+  var dur = (total/wps)*1000, tpp = dur/photos.length;
+  recorder.start(); playNarration();
+  for (var i = 0; i < photos.length; i++) {
+    currentPhoto = i; drawFrame(i);
+    await new Promise(function(r){ setTimeout(r, tpp); });
+  }
+  recorder.stop();
+}
+</script>
+</body>
+</html>
