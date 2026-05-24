@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   if (!text) return res.status(400).json({ error: 'Passe ?text=...' });
 
   try {
-    const chunks = splitText(text, 180);
+    const chunks = splitText(text, 100);
     const buffers = [];
 
     for (const chunk of chunks) {
