@@ -37,15 +37,37 @@ export default async function handler(req, res) {
 
     const cleanLines = lines.slice(startIdx);
 
-    // Remove linhas que parecem navegação (muito curtas ou só maiúsculas)
+    // Remove linhas que parecem navegação, autor ou rodapé
     const filtered = cleanLines.filter(l => {
-      if (l.length < 20 && l === l.toUpperCase()) return false; // ex: "NOTÍCIAS", "PALPITES"
+      if (l.length < 20 && l === l.toUpperCase()) return false; // ex: "NOTÍCIAS"
       if (/^(foto|image|crédito|photo):/i.test(l)) return false;
       if (/^siga-nos/i.test(l)) return false;
       return true;
     });
 
-    text = filtered.join(' ').replace(/\s{2,}/g, ' ').trim();
+    // Corta o texto ao encontrar sinais de fim do artigo (autor, relacionadas, comentários)
+    const cutPatterns = [
+      /please enable javascript/i,
+      /artigos relacionados/i,
+      /not[íi]cia anterior/i,
+      /pr[óo]xima not[íi]cia/i,
+      /leia (mais|também)/i,
+      /comments powered by/i,
+      /formado em \d{4}/i,
+      /jornalista formado/i,
+      /é (tricolor|vascaíno|flamenguista|corintiano|são-paulino)/i,
+      /trabalhou.{0,30}(redator|editor|repórter)/i,
+    ];
+
+    let cutIdx = filtered.length;
+    for (let i = 0; i < filtered.length; i++) {
+      if (cutPatterns.some(p => p.test(filtered[i]))) {
+        cutIdx = i;
+        break;
+      }
+    }
+
+    text = filtered.slice(0, cutIdx).join(' ').replace(/\s{2,}/g, ' ').trim();
 
     // Limita a ~400 palavras
     const words = text.split(/\s+/).filter(w => w.length > 0);
