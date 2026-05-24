@@ -7,7 +7,14 @@ export default async function handler(req, res) {
   let text = '';
 
   if (req.method === 'POST') {
-    text = req.body?.text || '';
+    // Vercel não parseia body automaticamente, lê o stream manualmente
+    const raw = await new Promise((resolve, reject) => {
+      let data = '';
+      req.on('data', chunk => data += chunk);
+      req.on('end', () => resolve(data));
+      req.on('error', reject);
+    });
+    try { text = JSON.parse(raw).text || ''; } catch(e) { text = raw; }
   } else {
     text = req.query.text || '';
   }
@@ -23,7 +30,7 @@ export default async function handler(req, res) {
       const r = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
-      if (!r.ok) throw new Error('Google TTS falhou no chunk: ' + r.status);
+      if (!r.ok) throw new Error(`Google TTS falhou no chunk "${chunk.slice(0,30)}...": status ${r.status}`);
       const buf = await r.arrayBuffer();
       buffers.push(Buffer.from(buf));
     }
