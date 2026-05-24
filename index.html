@@ -67,6 +67,8 @@
   </div>
 </div>
 
+<!-- FFmpeg WebAssembly -->
+<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
 <script>
 var photos = [], newsText = '', currentPhoto = 0;
 
@@ -236,28 +238,39 @@ async function recordVideo() {
     recorder.ondataavailable = function(e) { if (e.data.size > 0) chunks.push(e.data); };
     recorder.onstop = async function() {
       audioCtx.close();
-      setStatus('🔄 Convertendo para MP4...', '');
       var webmBlob = new Blob(chunks, { type: 'video/webm' });
+
       try {
-        var convRes = await fetch('/api/convert', {
-          method: 'POST',
-          headers: { 'Content-Type': 'video/webm' },
-          body: webmBlob
-        });
-        if (!convRes.ok) throw new Error('Conversão falhou: ' + convRes.status);
-        var mp4Blob = await convRes.blob();
+        setStatus('🔄 Convertendo para MP4...', '');
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        const ff = createFFmpeg({ log: false });
+        await ff.load();
+
+        ff.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
+        await ff.run(
+          '-i', 'input.webm',
+          '-c:v', 'libx264',
+          '-c:a', 'aac',
+          '-movflags', '+faststart',
+          '-preset', 'ultrafast',
+          'output.mp4'
+        );
+
+        const mp4Data = ff.FS('readFile', 'output.mp4');
+        var mp4Blob = new Blob([mp4Data.buffer], { type: 'video/mp4' });
         var a = document.createElement('a');
         a.href = URL.createObjectURL(mp4Blob);
         a.download = 'noticia-video.mp4';
         a.click();
         setStatus('✅ Download do MP4 iniciado!', 'ok');
       } catch(e) {
-        // fallback: baixa o webm mesmo
+        console.error('FFmpeg erro:', e);
+        // fallback: baixa webm
         var a = document.createElement('a');
         a.href = URL.createObjectURL(webmBlob);
         a.download = 'noticia-video.webm';
         a.click();
-        setStatus('⚠️ MP4 falhou, baixando WebM: ' + e.message, '');
+        setStatus('⚠️ Baixando WebM (MP4 indisponível)', '');
       }
     };
 
