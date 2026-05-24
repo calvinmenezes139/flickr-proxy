@@ -13,8 +13,6 @@ export default async function handler(req, res) {
       headers: {
         'Accept': 'text/plain',
         'X-Return-Format': 'text',
-        'X-Remove-Selector': 'nav, header, footer, aside, .menu, .navigation, .sidebar, .ads, .relacionadas',
-        'X-Target-Selector': 'article, main, .content, .post, .materia, .article-body, .entry-content',
       }
     });
 
