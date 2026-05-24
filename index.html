@@ -188,86 +188,71 @@ function playNarration() {
 
 async function recordVideo() {
   if (!photos.length || !newsText) return;
-  setStatus('⏺ Gravando vídeo...', '');
+  setStatus('🔊 Gerando áudio...', '');
 
-  var canvas = $('canvas');
+  try {
+    // Busca o áudio TTS do Vercel
+    var audioRes = await fetch('/api/tts?text=' + encodeURIComponent(newsText));
+    if (!audioRes.ok) throw new Error('Falha ao gerar áudio.');
+    var audioBlob = await audioRes.blob();
+    var audioUrl = URL.createObjectURL(audioBlob);
+    var audioEl = new Audio(audioUrl);
 
-  // Cria contexto de áudio e destination para captura
-  var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  var dest = audioCtx.createMediaStreamDestination();
+    // Captura o áudio via Web Audio API
+    var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var source = audioCtx.createMediaElementSource(audioEl);
+    var dest = audioCtx.createMediaStreamDestination();
+    source.connect(dest);
+    source.connect(audioCtx.destination); // também toca nos alto-falantes
 
-  // Cria oscillator silencioso para manter o stream de áudio ativo
-  var osc = audioCtx.createOscillator();
-  var gain = audioCtx.createGain();
-  gain.gain.value = 0;
-  osc.connect(gain);
-  gain.connect(dest);
-  osc.start();
+    // Combina canvas + áudio
+    var canvas = $('canvas');
+    var videoStream = canvas.captureStream(24);
+    dest.stream.getAudioTracks().forEach(function(t) { videoStream.addTrack(t); });
 
-  // Combina canvas + áudio num único stream
-  var videoStream = canvas.captureStream(24);
-  var audioTrack = dest.stream.getAudioTracks()[0];
-  videoStream.addTrack(audioTrack);
+    var recorder = new MediaRecorder(videoStream, { mimeType: 'video/webm;codecs=vp9,opus' });
+    var chunks = [];
+    recorder.ondataavailable = function(e) { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = function() {
+      audioCtx.close();
+      var blob = new Blob(chunks, { type: 'video/webm' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'noticia-video.webm';
+      a.click();
+      setStatus('✅ Download iniciado!', 'ok');
+    };
 
-  var recorder = new MediaRecorder(videoStream, { mimeType: 'video/webm;codecs=vp9,opus' });
-  var chunks = [];
-  recorder.ondataavailable = function(e) { if (e.data.size > 0) chunks.push(e.data); };
-  recorder.onstop = function() {
-    osc.stop();
-    audioCtx.close();
-    var blob = new Blob(chunks, { type: 'video/webm' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'noticia-video.webm';
-    a.click();
-    setStatus('✅ Download iniciado!', 'ok');
-  };
+    // Calcula tempo por foto baseado na duração real do áudio
+    audioEl.onloadedmetadata = async function() {
+      var duration = audioEl.duration * 1000;
+      var tpp = duration / photos.length;
 
-  // Usa SpeechSynthesis + captura via getDisplayMedia não funciona,
-  // então sintetizamos o áudio via speechSynthesis e usamos
-  // um hack: redireciona a voz para um elemento <audio> capturável
-  var utt = new SpeechSynthesisUtterance(newsText);
-  utt.lang = 'pt-BR';
-  utt.rate = 0.95;
+      recorder.start(100);
+      audioEl.play();
+      setStatus('⏺ Gravando...', '');
 
-  var totalWords = newsText.split(' ').length;
-  var wpp = Math.ceil(totalWords / photos.length);
-  var wc = 0;
-  var tpp = (totalWords / 2.5) * 1000 / photos.length;
-
-  utt.onboundary = function(e) {
-    if (e.name === 'word') {
-      wc++;
-      var idx = Math.min(Math.floor(wc / wpp), photos.length - 1);
-      if (idx !== currentPhoto) {
-        currentPhoto = idx; drawFrame(idx);
+      for (var i = 0; i < photos.length; i++) {
+        currentPhoto = i; drawFrame(i);
         $('photoStrip').querySelectorAll('img').forEach(function(t,j){
-          t.classList.toggle('active', j === idx);
+          t.classList.toggle('active', j === i);
         });
+        await new Promise(function(r){ setTimeout(r, tpp); });
       }
-    }
-  };
 
-  // Inicia gravação e narração juntas
-  recorder.start(100);
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utt);
-  setStatus('⏺ Gravando e narrando...', '');
+      await new Promise(function(resolve) {
+        audioEl.onended = resolve;
+        setTimeout(resolve, 3000);
+      });
 
-  // Avança fotos em paralelo com o tempo estimado
-  for (var i = 0; i < photos.length; i++) {
-    currentPhoto = i; drawFrame(i);
-    await new Promise(function(r){ setTimeout(r, tpp); });
+      recorder.stop();
+    };
+
+    audioEl.load();
+
+  } catch(e) {
+    setStatus('Erro: ' + e.message, 'error');
   }
-
-  // Aguarda narração terminar antes de parar
-  await new Promise(function(resolve) {
-    utt.onend = resolve;
-    // Timeout de segurança
-    setTimeout(resolve, 5000);
-  });
-
-  recorder.stop();
 }
 </script>
 </body>
