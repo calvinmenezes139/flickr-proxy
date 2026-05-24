@@ -12,7 +12,8 @@ export default async function handler(req, res) {
     const buffers = [];
 
     for (const chunk of chunks) {
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=pt-BR&client=tw-ob`;
+      const normalized = normalizeText(chunk);
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(normalized)}&tl=pt-BR&client=tw-ob`;
       const r = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
@@ -28,6 +29,10 @@ export default async function handler(req, res) {
   } catch(e) {
     return res.status(500).json({ error: e.message });
   }
+}
+
+function normalizeText(text) {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
 function splitText(text, maxLen) {
