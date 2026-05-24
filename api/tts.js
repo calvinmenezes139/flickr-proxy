@@ -1,15 +1,21 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { text } = req.query;
-  if (!text) return res.status(400).json({ error: 'Passe ?text=...' });
+  let text = '';
+
+  if (req.method === 'POST') {
+    text = req.body?.text || '';
+  } else {
+    text = req.query.text || '';
+  }
+
+  if (!text) return res.status(400).json({ error: 'Passe o texto.' });
 
   try {
-    // Google TTS endpoint público (sem API key, limite ~200 chars por chamada)
-    const chunks = splitText(decodeURIComponent(text), 180);
+    const chunks = splitText(text, 180);
     const buffers = [];
 
     for (const chunk of chunks) {
@@ -17,7 +23,7 @@ export default async function handler(req, res) {
       const r = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
-      if (!r.ok) throw new Error('TTS falhou: ' + r.status);
+      if (!r.ok) throw new Error('Google TTS falhou no chunk: ' + r.status);
       const buf = await r.arrayBuffer();
       buffers.push(Buffer.from(buf));
     }
