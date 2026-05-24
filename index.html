@@ -191,21 +191,33 @@ async function recordVideo() {
   setStatus('🔊 Gerando áudio...', '');
 
   try {
-    // Busca o áudio TTS do Vercel
     var audioRes = await fetch('/api/tts?text=' + encodeURIComponent(newsText));
-    if (!audioRes.ok) throw new Error('Falha ao gerar áudio.');
+    if (!audioRes.ok) throw new Error('TTS status ' + audioRes.status);
     var audioBlob = await audioRes.blob();
     var audioUrl = URL.createObjectURL(audioBlob);
-    var audioEl = new Audio(audioUrl);
 
-    // Captura o áudio via Web Audio API
+    var audioEl = new Audio();
+    audioEl.src = audioUrl;
+    audioEl.crossOrigin = 'anonymous';
+
+    // Aguarda o áudio estar pronto
+    await new Promise(function(resolve, reject) {
+      audioEl.oncanplaythrough = resolve;
+      audioEl.onerror = function() { reject(new Error('Erro ao carregar áudio.')); };
+      audioEl.load();
+    });
+
+    var duration = audioEl.duration * 1000;
+    var tpp = duration / photos.length;
+
+    // Web Audio para capturar o áudio
     var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     var source = audioCtx.createMediaElementSource(audioEl);
     var dest = audioCtx.createMediaStreamDestination();
     source.connect(dest);
-    source.connect(audioCtx.destination); // também toca nos alto-falantes
+    source.connect(audioCtx.destination);
 
-    // Combina canvas + áudio
+    // Stream combinado canvas + áudio
     var canvas = $('canvas');
     var videoStream = canvas.captureStream(24);
     dest.stream.getAudioTracks().forEach(function(t) { videoStream.addTrack(t); });
@@ -223,32 +235,26 @@ async function recordVideo() {
       setStatus('✅ Download iniciado!', 'ok');
     };
 
-    // Calcula tempo por foto baseado na duração real do áudio
-    audioEl.onloadedmetadata = async function() {
-      var duration = audioEl.duration * 1000;
-      var tpp = duration / photos.length;
+    recorder.start(100);
+    audioEl.play();
+    setStatus('⏺ Gravando...', '');
 
-      recorder.start(100);
-      audioEl.play();
-      setStatus('⏺ Gravando...', '');
-
-      for (var i = 0; i < photos.length; i++) {
-        currentPhoto = i; drawFrame(i);
-        $('photoStrip').querySelectorAll('img').forEach(function(t,j){
-          t.classList.toggle('active', j === i);
-        });
-        await new Promise(function(r){ setTimeout(r, tpp); });
-      }
-
-      await new Promise(function(resolve) {
-        audioEl.onended = resolve;
-        setTimeout(resolve, 3000);
+    // Avança fotos sincronizado com duração do áudio
+    for (var i = 0; i < photos.length; i++) {
+      currentPhoto = i; drawFrame(i);
+      $('photoStrip').querySelectorAll('img').forEach(function(t,j){
+        t.classList.toggle('active', j === i);
       });
+      await new Promise(function(r){ setTimeout(r, tpp); });
+    }
 
-      recorder.stop();
-    };
+    // Aguarda áudio terminar
+    await new Promise(function(resolve) {
+      audioEl.onended = resolve;
+      setTimeout(resolve, 4000);
+    });
 
-    audioEl.load();
+    recorder.stop();
 
   } catch(e) {
     setStatus('Erro: ' + e.message, 'error');
