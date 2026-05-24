@@ -191,12 +191,11 @@ async function recordVideo() {
   setStatus('🔊 Gerando áudio...', '');
 
   try {
-    var audioRes = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: newsText })
-    });
-    if (!audioRes.ok) throw new Error('TTS status ' + audioRes.status);
+    var audioRes = await fetch('/api/tts?text=' + encodeURIComponent(newsText));
+    if (!audioRes.ok) {
+      var errData = await audioRes.json().catch(function(){ return {}; });
+      throw new Error('TTS: ' + (errData.error || audioRes.status));
+    }
     var audioBlob = await audioRes.blob();
     var audioUrl = URL.createObjectURL(audioBlob);
 
