@@ -1,25 +1,11 @@
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  let text = '';
-
-  if (req.method === 'POST') {
-    // Vercel não parseia body automaticamente, lê o stream manualmente
-    const raw = await new Promise((resolve, reject) => {
-      let data = '';
-      req.on('data', chunk => data += chunk);
-      req.on('end', () => resolve(data));
-      req.on('error', reject);
-    });
-    try { text = JSON.parse(raw).text || ''; } catch(e) { text = raw; }
-  } else {
-    text = req.query.text || '';
-  }
-
-  if (!text) return res.status(400).json({ error: 'Passe o texto.' });
+  const text = req.query.text || '';
+  if (!text) return res.status(400).json({ error: 'Passe ?text=...' });
 
   try {
     const chunks = splitText(text, 180);
@@ -30,7 +16,7 @@ export default async function handler(req, res) {
       const r = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0' }
       });
-      if (!r.ok) throw new Error(`Google TTS falhou no chunk "${chunk.slice(0,30)}...": status ${r.status}`);
+      if (!r.ok) throw new Error('Google TTS status ' + r.status + ' chunk: ' + chunk.slice(0, 40));
       const buf = await r.arrayBuffer();
       buffers.push(Buffer.from(buf));
     }
