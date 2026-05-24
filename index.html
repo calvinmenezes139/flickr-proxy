@@ -67,6 +67,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.js"></script>
 <script>
 var photos = [], newsText = '', currentPhoto = 0;
 
@@ -236,14 +237,18 @@ async function recordVideo() {
     recorder.ondataavailable = function(e) { if (e.data.size > 0) chunks.push(e.data); };
     recorder.onstop = function() {
       audioCtx.close();
-      var blob = new Blob(chunks, { type: 'video/webm' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'noticia-video.webm';
-      a.click();
-      setStatus('✅ Download iniciado!', 'ok');
+      var rawBlob = new Blob(chunks, { type: 'video/webm' });
+      var recordedDuration = Date.now() - startTime;
+      ysFixWebmDuration(rawBlob, recordedDuration, function(fixedBlob) {
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(fixedBlob);
+        a.download = 'noticia-video.webm';
+        a.click();
+        setStatus('✅ Download iniciado!', 'ok');
+      });
     };
 
+    var startTime = Date.now();
     recorder.start(100);
     audioEl.play();
     setStatus('⏺ Gravando...', '');
