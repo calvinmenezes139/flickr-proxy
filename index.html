@@ -67,7 +67,6 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/fix-webm-duration@1.0.6/fix-webm-duration.js"></script>
 <script>
 var photos = [], newsText = '', currentPhoto = 0;
 
@@ -235,20 +234,33 @@ async function recordVideo() {
     var recorder = new MediaRecorder(videoStream, { mimeType: 'video/webm;codecs=vp9,opus' });
     var chunks = [];
     recorder.ondataavailable = function(e) { if (e.data.size > 0) chunks.push(e.data); };
-    recorder.onstop = function() {
+    recorder.onstop = async function() {
       audioCtx.close();
-      var rawBlob = new Blob(chunks, { type: 'video/webm' });
-      var recordedDuration = Date.now() - startTime;
-      ysFixWebmDuration(rawBlob, recordedDuration, function(fixedBlob) {
+      setStatus('🔄 Convertendo para MP4...', '');
+      var webmBlob = new Blob(chunks, { type: 'video/webm' });
+      try {
+        var convRes = await fetch('/api/convert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'video/webm' },
+          body: webmBlob
+        });
+        if (!convRes.ok) throw new Error('Conversão falhou: ' + convRes.status);
+        var mp4Blob = await convRes.blob();
         var a = document.createElement('a');
-        a.href = URL.createObjectURL(fixedBlob);
+        a.href = URL.createObjectURL(mp4Blob);
+        a.download = 'noticia-video.mp4';
+        a.click();
+        setStatus('✅ Download do MP4 iniciado!', 'ok');
+      } catch(e) {
+        // fallback: baixa o webm mesmo
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(webmBlob);
         a.download = 'noticia-video.webm';
         a.click();
-        setStatus('✅ Download iniciado!', 'ok');
-      });
+        setStatus('⚠️ MP4 falhou, baixando WebM: ' + e.message, '');
+      }
     };
 
-    var startTime = Date.now();
     recorder.start(100);
     audioEl.play();
     setStatus('⏺ Gravando...', '');
