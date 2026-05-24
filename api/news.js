@@ -57,6 +57,11 @@ export default async function handler(req, res) {
       /trabalhou.{0,30}(redator|editor|repórter)/i,
     ];
 
+    // Remove sufixo de tags/categorias no final do texto
+    // Ex: "...próxima semana. Fluminense Libertadores PV Vasconcellos"
+    // Corta tudo após o último ponto final seguido de palavras sem pontuação
+    text = text.replace(/\.\s+[^.!?]{0,120}$/, '.');
+
     let cutIdx = filtered.length;
     for (let i = 0; i < filtered.length; i++) {
       if (cutPatterns.some(p => p.test(filtered[i]))) {
