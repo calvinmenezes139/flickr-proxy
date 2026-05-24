@@ -201,11 +201,10 @@ async function recordVideo() {
 
     var audioEl = new Audio();
     audioEl.src = audioUrl;
-    audioEl.crossOrigin = 'anonymous';
 
-    // Aguarda o áudio estar pronto
+    // Aguarda metadados do áudio
     await new Promise(function(resolve, reject) {
-      audioEl.oncanplaythrough = resolve;
+      audioEl.onloadedmetadata = resolve;
       audioEl.onerror = function() { reject(new Error('Erro ao carregar áudio.')); };
       audioEl.load();
     });
@@ -213,16 +212,23 @@ async function recordVideo() {
     var duration = audioEl.duration * 1000;
     var tpp = duration / photos.length;
 
-    // Web Audio para capturar o áudio
+    // Desenha primeiro frame antes de iniciar gravação
+    currentPhoto = 0;
+    drawFrame(0);
+
+    // Pequena pausa para garantir que o canvas tem conteúdo
+    await new Promise(function(r){ setTimeout(r, 100); });
+
+    // Captura canvas
+    var canvas = $('canvas');
+    var videoStream = canvas.captureStream(24);
+
+    // Captura áudio via Web Audio API
     var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     var source = audioCtx.createMediaElementSource(audioEl);
     var dest = audioCtx.createMediaStreamDestination();
     source.connect(dest);
     source.connect(audioCtx.destination);
-
-    // Stream combinado canvas + áudio
-    var canvas = $('canvas');
-    var videoStream = canvas.captureStream(24);
     dest.stream.getAudioTracks().forEach(function(t) { videoStream.addTrack(t); });
 
     var recorder = new MediaRecorder(videoStream, { mimeType: 'video/webm;codecs=vp9,opus' });
@@ -244,7 +250,8 @@ async function recordVideo() {
 
     // Avança fotos sincronizado com duração do áudio
     for (var i = 0; i < photos.length; i++) {
-      currentPhoto = i; drawFrame(i);
+      currentPhoto = i;
+      drawFrame(i);
       $('photoStrip').querySelectorAll('img').forEach(function(t,j){
         t.classList.toggle('active', j === i);
       });
